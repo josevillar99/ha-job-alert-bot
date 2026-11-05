@@ -1,0 +1,108 @@
+alias: Bot de ofertas de empleo
+description: Lee las alertas de empleo, las puntúa con Claude y avisa de las que encajan
+mode: queued
+max: 10
+triggers:
+  - trigger: event
+    event_type: imap_content
+    event_data:
+      folder: AlertasEmpleo
+actions:
+  - action: imap.fetch
+    data:
+      entry: "{{ trigger.event.data.entry_id }}"
+      uid: "{{ trigger.event.data.uid }}"
+    response_variable: correo
+  - action: ai_task.generate_data
+    data:
+      task_name: Filtrar ofertas de empleo
+      instructions: |
+        Eres un filtro de ofertas de empleo para un desarrollador.
+
+        Su perfil:
+        {# Tu perfil en 2-4 líneas: rol, años de experiencia, tecnologías fuertes,
+           sectores en los que has trabajado y nivel de inglés. #}
+
+        Lo que busca:
+        {# Una línea por criterio, empezando por "- ". Por ejemplo: tipo de empresa
+           (producto, startup, tamaño), modalidad y zona (remoto desde tu país,
+           híbrido solo en tu ciudad), stack que quieres y stack que no quieres,
+           y lo que suma puntos (sector, región). #}
+
+        Reglas para puntuar:
+        {# Reglas concretas para que la nota sea fiable. Por ejemplo:
+           - Si el correo no indica el stack, no pongas más de 55 salvo que el
+             título mencione las tecnologías que buscas.
+           - Si no conoces la empresa, descartar=false. #}
+
+        Empresas que no interesan (marca descartar=true en todas sus ofertas):
+        {# Lista de nombres completos separados por comas: empresas que quieres descartar.
+           Usa nombres largos para evitar falsos positivos con empresas de
+           nombre parecido. #}
+
+        Del correo de abajo, extrae cada oferta de empleo y puntúala de 0 a 100 según lo bien que encaja con el perfil. Si el correo no contiene ofertas, devuelve una lista vacía.
+
+        Para cada oferta rellena también estos campos, sin inventar nada:
+        - "sobre": a qué se dedica la empresa y qué producto tiene, máximo 12 palabras. Si el correo no lo dice y no conoces la empresa con seguridad, escribe "No la conozco".
+        - "stack": tecnologías que mencionen el correo o el título del puesto, separadas por comas. Si no menciona ninguna, "No indicado".
+        - "salario": el salario tal como aparece en el correo. Si no aparece, "No indicado". No lo estimes.
+        - "idioma": idioma en que está escrito el puesto y, si el correo lo dice, el nivel de inglés que piden. Máximo 6 palabras.
+
+        Responde SOLO con JSON válido, sin ningún texto más, con este formato:
+        {"ofertas": [{"empresa": "...", "puesto": "...", "modalidad": "una sola opción: remoto, híbrido en <ciudad> o presencial en <ciudad>", "enlace": "URL de la oferta", "descartar": false, "puntuacion": 75, "motivo": "máximo 15 palabras en español", "sobre": "...", "stack": "...", "salario": "...", "idioma": "..."}]}
+
+        CORREO
+        Asunto: {{ correo.subject }}
+        {{ correo.text | regex_replace('[?][^\\s]*', '') }}
+    response_variable: analisis
+  - variables:
+      ofertas: >
+        {% set limpio = analisis.data | replace('```json', '') | replace('```', '') | trim %}
+        {{ (limpio | from_json).ofertas | default([]) }}
+  - action: todo.get_items
+    target:
+      entity_id: todo.ofertas_empleo
+    data:
+      status:
+        - needs_action
+        - completed
+    response_variable: lista
+  - variables:
+      ya_vistas: "{{ lista['todo.ofertas_empleo']['items'] | map(attribute='summary') | join(' | ') }}"
+      # Nota mínima para avisar. Súbela si te llegan demasiadas ofertas flojas.
+      buenas: "{{ ofertas | selectattr('puntuacion', 'ge', 70) | rejectattr('descartar') | list }}"
+  - repeat:
+      for_each: "{{ buenas }}"
+      sequence:
+        - variables:
+            clave: "{{ repeat.item.empresa }} – {{ repeat.item.puesto }}"
+            titulo: "{{ '%02d' | format([repeat.item.puntuacion | int, 99] | min) }} % · {{ repeat.item.empresa }} – {{ repeat.item.puesto }}"
+        - if:
+            - condition: template
+              value_template: "{{ clave not in ya_vistas }}"
+          then:
+            - action: todo.add_item
+              target:
+                entity_id: todo.ofertas_empleo
+              data:
+                item: "{{ titulo }}"
+                description: |-
+                  {{ repeat.item.modalidad }} · {{ repeat.item.motivo }}
+
+                  - Empresa: {{ repeat.item.sobre | default('No la conozco', true) }}
+                  - Stack: {{ repeat.item.stack | default('No indicado', true) }}
+                  - Salario: {{ repeat.item.salario | default('No indicado', true) }}
+                  - Idioma: {{ repeat.item.idioma | default('No indicado', true) }}
+
+                  {{ repeat.item.enlace }}
+            # Cambia mobile_app_your_phone por el servicio de notificación de tu móvil.
+            - action: notify.mobile_app_your_phone
+              data:
+                title: "{{ repeat.item.empresa }} · {{ repeat.item.puntuacion }} %"
+                message: "{{ repeat.item.puesto }} ({{ repeat.item.modalidad }}). {{ repeat.item.motivo }}"
+                data:
+                  url: "{{ repeat.item.enlace }}"
+  - action: imap.seen
+    data:
+      entry: "{{ trigger.event.data.entry_id }}"
+      uid: "{{ trigger.event.data.uid }}"

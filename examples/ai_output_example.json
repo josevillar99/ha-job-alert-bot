@@ -1,0 +1,31 @@
+{
+  "_note": "Illustrative example of the JSON the model returns for one alert email. Values are examples, not a real run.",
+  "ofertas": [
+    {
+      "empresa": "WorkFlex",
+      "puesto": "Full-Stack Software Engineer – AI First (Angular and Java)",
+      "modalidad": "remoto",
+      "enlace": "https://www.linkedin.com/comm/jobs/view/4461074118/",
+      "descartar": false,
+      "puntuacion": 82,
+      "motivo": "Java y Angular, producto HR tech",
+      "sobre": "Plataforma SaaS para trabajar desde el extranjero sin riesgos legales",
+      "stack": "Java, Angular",
+      "salario": "No indicado",
+      "idioma": "Inglés"
+    },
+    {
+      "empresa": "Empresa de ejemplo",
+      "puesto": "Desarrollador PHP Senior",
+      "modalidad": "presencial en Barcelona",
+      "enlace": "https://www.linkedin.com/comm/jobs/view/0000000000/",
+      "descartar": false,
+      "puntuacion": 25,
+      "motivo": "Presencial fuera de mi zona y stack PHP",
+      "sobre": "No la conozco",
+      "stack": "PHP, Laravel",
+      "salario": "40.000–48.000 €",
+      "idioma": "Español"
+    }
+  ]
+}

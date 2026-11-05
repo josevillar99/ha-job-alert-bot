@@ -13,9 +13,9 @@ Every good offer arrives as a push notification from the Home Assistant app. The
 <img src="docs/images/notification.png" alt="Push notification on the phone" width="320">
 
 ```
-WorkFlex · 82 %
-Full-Stack Software Engineer – AI First (Angular and Java) (remoto).
-Java y Angular, producto HR tech
+Empresa Ejemplo · 82 %
+Full-Stack Engineer (Java and Angular) (remoto).
+Java y Angular, producto propio
 ```
 
 ### In Home Assistant
@@ -25,16 +25,16 @@ The offers are also saved in a to-do list called **Ofertas empleo**, on the dash
 <img src="docs/images/todo-list.png" alt="To-do list with offers sorted by score" width="480">
 
 ```
-82 % · WorkFlex – Full-Stack Software Engineer – AI First (Angular and Java)
+82 % · Empresa Ejemplo – Full-Stack Engineer (Java and Angular)
 
-remoto · Java y Angular, producto HR tech
+remoto · Java y Angular, producto propio
 
-- Empresa: Plataforma SaaS para trabajar desde el extranjero sin riesgos legales
+- Empresa: Plataforma SaaS de recursos humanos
 - Stack: Java, Angular
 - Salario: No indicado
 - Idioma: Inglés
 
-https://www.linkedin.com/comm/jobs/view/4461074118/
+https://www.linkedin.com/comm/jobs/view/0000000001/
 ```
 
 When I apply to an offer, I tick it in the list. Ticked offers stay there, so the bot never adds them again.
@@ -58,7 +58,7 @@ flowchart LR
     C -->|imap_content event| D[Automation]
     D -->|imap.fetch| E[Email text<br>tracking links cleaned]
     E -->|ai_task.generate_data| F[Claude Haiku 4.5<br>JSON with scored offers]
-    F --> G{score >= 70<br>not skipped<br>not seen before}
+    F --> G{score >= 60<br>not skipped<br>not seen before}
     G -->|yes| H[To-do list<br>Ofertas empleo]
     G -->|yes| I[Push notification<br>with link]
     D -->|imap.seen| J[Email marked as read]
@@ -74,13 +74,13 @@ For one offer, Claude returns something like this ([full example](examples/ai_ou
 
 ```json
 {
-  "empresa": "WorkFlex",
-  "puesto": "Full-Stack Software Engineer – AI First (Angular and Java)",
+  "empresa": "Empresa Ejemplo",
+  "puesto": "Full-Stack Engineer (Java and Angular)",
   "modalidad": "remoto",
   "descartar": false,
   "puntuacion": 82,
-  "motivo": "Java y Angular, producto HR tech",
-  "sobre": "Plataforma SaaS para trabajar desde el extranjero sin riesgos legales",
+  "motivo": "Java y Angular, producto propio",
+  "sobre": "Plataforma SaaS de recursos humanos",
   "stack": "Java, Angular",
   "salario": "No indicado",
   "idioma": "Inglés"
@@ -92,7 +92,7 @@ The prompt and the output are in Spanish because I am a Spanish developer lookin
 ## Problems I hit and how I solved them
 
 - **The model ran out of output tokens.** LinkedIn emails are full of very long tracking links. A regex in the template removes everything after `?` in each URL, which took one email from 10,325 to 2,440 characters.
-- **Vague offers got good scores.** Many alerts don't mention the stack. I added a rule: if the stack is not in the email, the score can't go above 55 unless the title says Java, Spring, Angular or React. I also raised the threshold from 65 to 70.
+- **Vague offers got good scores.** Many alerts don't mention the stack. I added a rule: if the stack is not in the email, the score can't go above 55 unless the title says Java, Spring, Angular or React. Only offers with 60 % or more reach the phone; you can raise it if you get too many.
 - **Small companies slipped through.** The model knows big companies, but not small ones. Companies to skip have to be listed by name, including their old brand names.
 - **False positives.** Short names can match other companies with a similar name. The list uses full names.
 - **The model copied the example text.** For the work mode it sometimes wrote "remoto / híbrido en ..." literally. The format now says "only one option" and uses `<ciudad>` as a placeholder.

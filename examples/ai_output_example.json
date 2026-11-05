@@ -2,14 +2,14 @@
   "_note": "Illustrative example of the JSON the model returns for one alert email. Values are examples, not a real run.",
   "ofertas": [
     {
-      "empresa": "WorkFlex",
-      "puesto": "Full-Stack Software Engineer – AI First (Angular and Java)",
+      "empresa": "Empresa Ejemplo",
+      "puesto": "Full-Stack Engineer (Java and Angular)",
       "modalidad": "remoto",
-      "enlace": "https://www.linkedin.com/comm/jobs/view/4461074118/",
+      "enlace": "https://www.linkedin.com/comm/jobs/view/0000000001/",
       "descartar": false,
       "puntuacion": 82,
-      "motivo": "Java y Angular, producto HR tech",
-      "sobre": "Plataforma SaaS para trabajar desde el extranjero sin riesgos legales",
+      "motivo": "Java y Angular, producto propio",
+      "sobre": "Plataforma SaaS de recursos humanos",
       "stack": "Java, Angular",
       "salario": "No indicado",
       "idioma": "Inglés"

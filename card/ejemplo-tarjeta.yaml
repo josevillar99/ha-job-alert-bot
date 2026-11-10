@@ -1,0 +1,5 @@
+# Pega esto en una tarjeta "Manual" de Home Assistant (uno por persona).
+type: custom:ofertas-card
+entity: todo.ofertas_empleo
+titulo: Ofertas de empleo
+completadas: false   # true para ver también las marcadas como vistas

@@ -1,13 +1,42 @@
 alias: Bot de ofertas de empleo
-description: Lee las alertas de empleo, las puntúa con Claude y avisa de las que encajan
+description: >-
+  Lee las alertas de empleo de cada persona, las puntúa con Claude según su perfil y avisa a su
+  móvil de las que encajan. Las muy buenas pero fuera de zona van aparte (🔁 Renegociar).
 mode: queued
-max: 10
+max: 50
+# Guarda las 50 últimas ejecuciones (por defecto solo 5) para revisar qué hizo con cada correo
+trace:
+  stored_traces: 50
+# Un trigger por persona: cada una tiene su etiqueta de Gmail (y su entrada IMAP).
+# El id tiene que coincidir con una clave de "perfiles" (abajo). Para añadir otra persona,
+# copia un trigger y un bloque de perfiles, y añade su perfil en el prompt.
 triggers:
   - trigger: event
+    id: yo
     event_type: imap_content
     event_data:
       folder: AlertasEmpleo
+  - trigger: event
+    id: pareja
+    event_type: imap_content
+    event_data:
+      folder: AlertasEmpleoPareja
 actions:
+  - variables:
+      perfiles:
+        yo:
+          lista: todo.ofertas_empleo                # su lista de tareas (Local To-do)
+          umbral: 70                                # nota mínima para avisar
+          umbral_renegociar: 80                     # nota mínima de las de fuera de zona
+          movil: notify.mobile_app_your_phone       # su servicio de notificación
+        pareja:
+          lista: todo.ofertas_pareja
+          umbral: 50
+          umbral_renegociar: 80
+          movil: notify.mobile_app_partner_phone
+      persona: "{{ trigger.id }}"
+      perfil: "{{ perfiles[trigger.id] }}"
+      lista_id: "{{ perfil.lista }}"
   - action: imap.fetch
     data:
       entry: "{{ trigger.event.data.entry_id }}"
@@ -17,6 +46,7 @@ actions:
     data:
       task_name: Filtrar ofertas de empleo
       instructions: |
+        {% if persona == 'yo' %}
         Eres un filtro de ofertas de empleo para un desarrollador.
 
         Su perfil:
@@ -26,7 +56,7 @@ actions:
         Lo que busca:
         {# Una línea por criterio, empezando por "- ". Por ejemplo: tipo de empresa
            (producto, startup, tamaño), modalidad y zona (remoto desde tu país,
-           híbrido solo en tu ciudad), stack que quieres y stack que no quieres,
+           híbrido solo en tu provincia), stack que quieres y stack que no quieres,
            y lo que suma puntos (sector, región). #}
 
         Reglas para puntuar:
@@ -35,21 +65,59 @@ actions:
              título mencione las tecnologías que buscas.
            - Si no conoces la empresa, descartar=false. #}
 
-        Empresas que no interesan (marca descartar=true en todas sus ofertas):
-        {# Lista de nombres completos separados por comas: empresas que quieres descartar.
-           Usa nombres largos para evitar falsos positivos con empresas de
-           nombre parecido. #}
+        - UBICACIÓN: {# Tu zona amplia (por ejemplo tu comunidad autónoma, con sus
+          provincias y ciudades) y tu zona cercana (por ejemplo tu provincia). #}
+          Si es presencial o híbrido fuera de la zona amplia, renegociar=true y
+          puntúa la empresa y el puesto como si fuese en remoto, para saber si
+          merece la pena intentar negociar el remoto; en el motivo di qué tiene
+          de bueno. Si es presencial o híbrido dentro de la zona amplia pero
+          fuera de la cercana, renegociar=false SIEMPRE y resta 15 puntos. En el
+          resto de casos, renegociar=false.
+
+        Empresas que no interesan (descartar=true en todas sus ofertas):
+        {# Lista de nombres completos separados por comas. Usa nombres largos para
+           evitar falsos positivos con empresas de nombre parecido. #}
+
+        - Si en el motivo dices que la empresa es de las que no interesan,
+        descartar tiene que ser true.
+
+        {% else %}
+        Eres un filtro de ofertas de empleo para otra persona.
+
+        Su perfil:
+        {# Estudios, experiencia, idiomas y herramientas que maneja. #}
+
+        Lo que busca:
+        {# Áreas que le interesan (y cuál es su favorita), tipo de puesto
+           (prácticas, junior...), zonas donde puede trabajar y tiempo máximo de
+           viaje. #}
+
+        Reglas para puntuar:
+        {# - DESCARTAR (descartar=true): áreas que no quiere, condiciones que no
+             acepta nunca (turnos, fines de semana, comisión, ETT...), zonas
+             demasiado lejos.
+           - Suman puntos: ...
+           - Restan puntos: ...
+           - Si quiere ver también las dudosas: "a una oferta que podría
+             interesarle aunque no encaje del todo, dale entre 50 y 60". #}
+
+        - renegociar siempre false.
+
+        {% endif %}
+        - AGREGADORES (Jobgether, Jooble, Manfred, Get on Board): no son el
+        empleador. Juzga la empresa real si aparece en la alerta; si no aparece,
+        descartar=false y resta 10 puntos.
 
         Del correo de abajo, extrae cada oferta de empleo y puntúala de 0 a 100 según lo bien que encaja con el perfil. Si el correo no contiene ofertas, devuelve una lista vacía.
 
         Para cada oferta rellena también estos campos, sin inventar nada:
         - "sobre": a qué se dedica la empresa y qué producto tiene, máximo 12 palabras. Si el correo no lo dice y no conoces la empresa con seguridad, escribe "No la conozco".
-        - "stack": tecnologías que mencionen el correo o el título del puesto, separadas por comas. Si no menciona ninguna, "No indicado".
+        - "stack": {% if persona == 'yo' %}tecnologías que mencionen el correo o el título del puesto{% else %}requisitos principales del puesto (idiomas, estudios, herramientas){% endif %}, separados por comas. Si no menciona ninguno, "No indicado".
         - "salario": el salario tal como aparece en el correo. Si no aparece, "No indicado". No lo estimes.
         - "idioma": idioma en que está escrito el puesto y, si el correo lo dice, el nivel de inglés que piden. Máximo 6 palabras.
 
         Responde SOLO con JSON válido, sin ningún texto más, con este formato:
-        {"ofertas": [{"empresa": "...", "puesto": "...", "modalidad": "una sola opción: remoto, híbrido en <ciudad> o presencial en <ciudad>", "enlace": "URL de la oferta", "descartar": false, "puntuacion": 75, "motivo": "máximo 15 palabras en español", "sobre": "...", "stack": "...", "salario": "...", "idioma": "..."}]}
+        {"ofertas": [{"empresa": "...", "puesto": "...", "modalidad": "una sola opción: remoto, híbrido en <ciudad> o presencial en <ciudad>", "enlace": "URL de la oferta", "descartar": false, "renegociar": false, "puntuacion": 75, "motivo": "máximo 15 palabras en español", "sobre": "...", "stack": "...", "salario": "...", "idioma": "..."}]}
 
         CORREO
         Asunto: {{ correo.subject }}
@@ -61,45 +129,70 @@ actions:
         {{ (limpio | from_json).ofertas | default([]) }}
   - action: todo.get_items
     target:
-      entity_id: todo.ofertas_empleo
+      entity_id: "{{ lista_id }}"
     data:
       status:
         - needs_action
         - completed
     response_variable: lista
   - variables:
-      ya_vistas: "{{ lista['todo.ofertas_empleo']['items'] | map(attribute='summary') | join(' | ') }}"
-      # Nota mínima para avisar. Súbela si te llegan demasiadas ofertas flojas.
-      buenas: "{{ ofertas | selectattr('puntuacion', 'ge', 70) | rejectattr('descartar') | list }}"
+      ya_vistas: "{{ lista[lista_id]['items'] | map(attribute='summary') | join(' | ') }}"
+      # Pasan las que no están descartadas y llegan a la nota mínima (más alta si son de renegociar)
+      buenas: >-
+        {% set ns = namespace(l=[]) %}{% for o in ofertas if not (o.descartar | default(false)) %}{% set minimo = perfil.umbral_renegociar if (o.renegociar | default(false)) else perfil.umbral %}{% if (o.puntuacion | int(0)) >= (minimo | int) %}{% set ns.l = ns.l + [o] %}{% endif %}{% endfor %}{{ ns.l }}
+  # Registro permanente: una línea por cada oferta leída (avisada o no) en /media/registro_ofertas.txt.
+  # Necesita la integración File (ver docs/setup.md). Si falla, el bot sigue igual.
+  - action: notify.send_message
+    continue_on_error: true
+    target:
+      entity_id: notify.registro_ofertas
+    data:
+      message: >-
+        {%- set fecha = now().strftime('%Y-%m-%d %H:%M') -%}
+        {%- set ns = namespace(l=[]) -%}
+        {%- for o in ofertas -%}
+          {%- set clave = (o.empresa ~ ' – ' ~ o.puesto) -%}
+          {%- set fila = {'persona': persona, 'asunto': correo.subject,
+            'empresa': o.empresa | default(''), 'puesto': o.puesto | default(''),
+            'modalidad': o.modalidad | default(''),
+            'nota': o.puntuacion | default(0), 'descartar': o.descartar | default(false),
+            'renegociar': o.renegociar | default(false),
+            'aviso': (o in buenas) and (clave not in ya_vistas),
+            'repetida': clave in ya_vistas, 'motivo': o.motivo | default(''),
+            'enlace': o.enlace | default('')} -%}
+          {%- set ns.l = ns.l + [fecha ~ ' ' ~ (fila | to_json)] -%}
+        {%- endfor -%}
+        {%- if ns.l -%}{{ ns.l | join('\n') }}{%- else -%}{{ fecha ~ ' ' ~
+        ({'persona': persona, 'asunto': correo.subject, 'ofertas': 0} | to_json)
+        }}{%- endif -%}
   - repeat:
       for_each: "{{ buenas }}"
       sequence:
         - variables:
+            reneg: "{{ repeat.item.renegociar | default(false) }}"
             clave: "{{ repeat.item.empresa }} – {{ repeat.item.puesto }}"
-            titulo: "{{ '%02d' | format([repeat.item.puntuacion | int, 99] | min) }} % · {{ repeat.item.empresa }} – {{ repeat.item.puesto }}"
+            titulo: >-
+              {{ '%02d' | format([repeat.item.puntuacion | int, 99] | min) }} % · {{ '🔁 ' if reneg else '' }}{{ repeat.item.empresa }} – {{ repeat.item.puesto }}
         - if:
             - condition: template
               value_template: "{{ clave not in ya_vistas }}"
           then:
             - action: todo.add_item
               target:
-                entity_id: todo.ofertas_empleo
+                entity_id: "{{ lista_id }}"
               data:
                 item: "{{ titulo }}"
                 description: |-
-                  {{ repeat.item.modalidad }} · {{ repeat.item.motivo }}
+                  {% if repeat.item.enlace %}[🔗 Abrir la oferta]({{ repeat.item.enlace }}) · {% endif %}{{ '🔁 Renegociar: ' if reneg else '' }}{{ repeat.item.modalidad }} · {{ repeat.item.motivo }}
 
                   - Empresa: {{ repeat.item.sobre | default('No la conozco', true) }}
-                  - Stack: {{ repeat.item.stack | default('No indicado', true) }}
+                  - {{ 'Stack' if persona == 'yo' else 'Requisitos' }}: {{ repeat.item.stack | default('No indicado', true) }}
                   - Salario: {{ repeat.item.salario | default('No indicado', true) }}
                   - Idioma: {{ repeat.item.idioma | default('No indicado', true) }}
-
-                  {{ repeat.item.enlace }}
-            # Cambia mobile_app_your_phone por el servicio de notificación de tu móvil.
-            - action: notify.mobile_app_your_phone
+            - action: "{{ perfil.movil }}"
               data:
-                title: "{{ repeat.item.empresa }} · {{ repeat.item.puntuacion }} %"
-                message: "{{ repeat.item.puesto }} ({{ repeat.item.modalidad }}). {{ repeat.item.motivo }}"
+                title: "{{ '🔁 Renegociar · ' if reneg else '' }}{{ repeat.item.empresa }} · {{ repeat.item.puntuacion }} %"
+                message: "{{ repeat.item.puesto }} ({{ repeat.item.modalidad }}{{ ', habría que negociar el remoto' if reneg else '' }}). {{ repeat.item.motivo }}"
                 data:
                   url: "{{ repeat.item.enlace }}"
   - action: imap.seen
